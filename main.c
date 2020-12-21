@@ -18,6 +18,24 @@ void catchCtrlD(int signalNbr);
 
 void setup(char inputBuffer[], char *args[],int *background)
 {
+    struct sigaction action;
+    int status;
+    action.sa_flags=0;
+    action.sa_handler=catchCtrlD;
+    status=sigemptyset(&action.sa_mask);
+
+    if(status==-1)
+    {
+        perror("Failed");
+        exit(1);
+    }
+    status=sigaction(SIGINT,&action,NULL);
+    if(status==-1)
+    {
+        perror("Failed HANDLER");
+        exit(1);
+    }
+
     int length, /* # of characters in the command line */
     i,      /* loop index for accessing inputBuffer array */
     start,  /* index where beginning of next command parameter is */
@@ -86,7 +104,7 @@ void setup(char inputBuffer[], char *args[],int *background)
 } /* end of setup routine */
 
 int main(void)
-{           struct sigaction action;
+{
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
     char *args[MAX_LINE/2 + 1]; /*command line arguments */
@@ -98,26 +116,13 @@ int main(void)
     new_termios.c_cc[VINTR] = 4;
     tcsetattr(0,TCSANOW,&new_termios);
 
-    int status;
-    action.sa_flags=0;
-    action.sa_handler=catchCtrlD;
-    status=sigemptyset(&action.sa_mask);
+
 
     while (1){
-        if(status==-1)
-        {
-            perror("Failed");
-            exit(1);
-        }
-        status=sigaction(SIGINT,&action,NULL);
-        if(status==-1)
-        {
-            perror("Failed HANDLER");
-            exit(1);
-        }
+
 
         background = 0;
-        printf("myshell: ");
+        fprintf(stderr, "%s", "myshell: ");
         setup(inputBuffer, args, &background);        /*setup() calls exit() when Control-D is entered */
 
         /** the steps are:
