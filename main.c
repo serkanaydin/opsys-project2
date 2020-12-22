@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 #include<termios.h>
+#include<wait.h>
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
 /* The setup function below will not return any value, but it will just: read
@@ -14,27 +15,12 @@ delimiters), and set the args array entries to point to the beginning of what
 will become null-terminated, C-style strings. */
 
 void catchCtrlD(int signalNbr);
+void execute(char *args[]);
 
 
 void setup(char inputBuffer[], char *args[],int *background)
 {
-    struct sigaction action;
-    int status;
-    action.sa_flags=0;
-    action.sa_handler=catchCtrlD;
-    status=sigemptyset(&action.sa_mask);
 
-    if(status==-1)
-    {
-        perror("Failed");
-        exit(1);
-    }
-    status=sigaction(SIGINT,&action,NULL);
-    if(status==-1)
-    {
-        perror("Failed HANDLER");
-        exit(1);
-    }
 
     int length, /* # of characters in the command line */
     i,      /* loop index for accessing inputBuffer array */
@@ -101,10 +87,28 @@ void setup(char inputBuffer[], char *args[],int *background)
 
     for (i = 0; i <= ct; i++)
         printf("args %d = %s\n",i,args[i]);
+
 } /* end of setup routine */
 
 int main(void)
-{
+{       struct sigaction action;
+    int status;
+    action.sa_flags=0;
+    action.sa_handler=catchCtrlD;
+    status=sigemptyset(&action.sa_mask);
+
+    if(status==-1)
+    {
+        perror("Failed");
+        exit(1);
+    }
+    status=sigaction(SIGINT,&action,NULL);
+    if(status==-1)
+    {
+        perror("Failed HANDLER");
+        exit(1);
+    }
+
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
     char *args[MAX_LINE/2 + 1]; /*command line arguments */
@@ -115,15 +119,38 @@ int main(void)
     new_termios.c_cc[VEOF]  = 3;
     new_termios.c_cc[VINTR] = 4;
     tcsetattr(0,TCSANOW,&new_termios);
+    pid_t cpid;
 
 
-
-    while (1){
-
-
+    while (1) {
         background = 0;
-        fprintf(stderr, "%s", "myshell: ");
-        setup(inputBuffer, args, &background);        /*setup() calls exit() when Control-D is entered */
+        //  setup(inputBuffer, args, &background);
+        /*setup() calls exit() when Control-D is entered */
+
+
+
+     printf("myshell: ");
+        fflush(stdout);
+        setup(inputBuffer, args, &background);
+
+        cpid=fork();
+        if(cpid==-1)
+            perror("Child creation");
+        else if(cpid==0 ){
+            execute(args);
+        }
+        else{
+            while(waitpid(-1,NULL,WNOHANG)>=0);
+        }
+
+
+
+
+
+    }
+
+
+
 
         /** the steps are:
         (1) fork a child process using fork()
@@ -133,7 +160,7 @@ int main(void)
 
 
 
-    }
+
 
 }
 
@@ -142,4 +169,23 @@ void catchCtrlD(int signalNbr){
     tcsetattr(0,TCSANOW,&old_termios);
     perror(message);
     exit(1);
+}
+
+void execute(char *args[]){
+    char* s = getenv("PATH");
+    char delim[]=":\n";
+    char * token = strtok(s, delim);
+    char buff[50];
+
+    while( token != NULL ) {
+        strcpy(buff,token);
+        if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
+    execvp(buff,args);
+}
+        token = strtok(NULL, delim);
+
+
+
+    }
+
 }
