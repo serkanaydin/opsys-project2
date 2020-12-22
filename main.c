@@ -80,6 +80,7 @@ void setup(char inputBuffer[], char *args[],int *background)
                 if (inputBuffer[i] == '&'){
                     *background  = 1;
                     inputBuffer[i-1] = '\0';
+
                 }
         } /* end of switch */
     }    /* end of for */
@@ -128,7 +129,7 @@ int main(void)
         /*setup() calls exit() when Control-D is entered */
 
 
-
+        fflush(stdout);
      printf("myshell: ");
         fflush(stdout);
         setup(inputBuffer, args, &background);
@@ -137,9 +138,12 @@ int main(void)
         if(cpid==-1)
             perror("Child creation");
         else if(cpid==0 ){
+              /*  printf("%d",background);
+                fflush(stdout);*/
             execute(args);
         }
         else{
+            if(background==0)
             while(waitpid(-1,NULL,WNOHANG)>=0);
         }
 
@@ -176,11 +180,26 @@ void execute(char *args[]){
     char delim[]=":\n";
     char * token = strtok(s, delim);
     char buff[50];
+    int i=0;
+    while(args[i]!=NULL){
+        i++;
+    }
+    if(strcmp(args[i-1],"&")==0)
+        i=i-1;
+    char* argument[i+1];
+    for(int k=0;k<i;k++) {
+        argument[k] = args[k];
+
+    }
+argument[i]=NULL;
+
+
 
     while( token != NULL ) {
         strcpy(buff,token);
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
-    execvp(buff,args);
+
+    execvp(buff,argument);
 }
         token = strtok(NULL, delim);
 
