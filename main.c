@@ -9,14 +9,19 @@
 #include<wait.h>
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
-/* The setup function below will not return any value, but it will just: read
-in the next command line; separate it into distinct arguments (using blanks as
-delimiters), and set the args array entries to point to the beginning of what
-will become null-terminated, C-style strings. */
-
+pid_t FOREGROUND_PID=0;
+pid_t parent=0;
 void catchCtrlD(int signalNbr);
+void catchCtrlZ(int signalNbr);
 void execute(char *args[]);
+struct background_proc{
+    pid_t pid;
+    char input[MAX_LINE];
+    struct background_proc* next;
+};
 
+typedef struct background_proc* BACKGROUND_PROC_PTR;
+typedef struct background_proc BACKGROUND_PROC;
 
 void setup(char inputBuffer[], char *args[],int *background)
 {
@@ -93,10 +98,17 @@ void setup(char inputBuffer[], char *args[],int *background)
 
 int main(void)
 {       struct sigaction action;
+        struct sigaction actionZ;
     int status;
+    int statusZ;
     action.sa_flags=0;
     action.sa_handler=catchCtrlD;
     status=sigemptyset(&action.sa_mask);
+    parent = getpid();
+
+    actionZ.sa_flags=0;
+    actionZ.sa_handler=catchCtrlZ;
+    statusZ=sigemptyset(&actionZ.sa_mask);
 
     if(status==-1)
     {
@@ -105,6 +117,20 @@ int main(void)
     }
     status=sigaction(SIGINT,&action,NULL);
     if(status==-1)
+    {
+        perror("Failed HANDLER");
+        exit(1);
+    }
+
+
+
+    if(statusZ==-1)
+    {
+        perror("Failed");
+        exit(1);
+    }
+    statusZ=sigaction(SIGTSTP,&actionZ,NULL);
+    if(statusZ==-1)
     {
         perror("Failed HANDLER");
         exit(1);
@@ -121,6 +147,10 @@ int main(void)
     new_termios.c_cc[VINTR] = 4;
     tcsetattr(0,TCSANOW,&new_termios);
     pid_t cpid;
+    BACKGROUND_PROC_PTR current=NULL;
+    BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
+    int BUILT_IN=0;
+    int order=1;
 
 
     while (1) {
@@ -133,8 +163,28 @@ int main(void)
      printf("myshell: ");
         fflush(stdout);
         setup(inputBuffer, args, &background);
+        /*if(background==1){
+            if(BACKGROUND_HEAD==NULL){
+                BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
+                BACKGROUND_HEAD->next=NULL;
 
-        cpid=fork();
+            }
+            else {
+                while (current->next!=NULL)
+                    current=current->next;
+            }
+            current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+            current=current->next;
+            strcpy((char *) current->input, (char *) args);
+            current->next=NULL;
+        }
+        if(strcmp(args[0],"ps_all")==0){
+            BUILT_IN=1;
+        }*/
+
+        if(BUILT_IN==0){
+            cpid=fork();
         if(cpid==-1)
             perror("Child creation");
         else if(cpid==0 ){
@@ -143,12 +193,22 @@ int main(void)
             execute(args);
         }
         else{
+            FOREGROUND_PID=cpid;
             if(background==0)
             while(waitpid(-1,NULL,WNOHANG)>=0);
         }
 
 
+        }
+        else{
+            /*if(BUILT_IN==1){
+                current=BACKGROUND_HEAD;
+                while(current!=NULL){
+                    printf("%s (PID=%ld) \n",current->input,current->pid);
+                }
+            }*/
 
+        }
 
 
     }
@@ -165,6 +225,14 @@ int main(void)
 
 
 
+
+}
+void catchCtrlZ(int signalNbr){
+
+if(FOREGROUND_PID!=0){
+    char message[] = "Ctrl-Z was pressed\n";
+    fprintf(stderr,"%s",message);
+    kill(FOREGROUND_PID,SIGKILL);}
 
 }
 
