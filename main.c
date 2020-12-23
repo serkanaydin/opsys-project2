@@ -10,10 +10,10 @@
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
 pid_t FOREGROUND_PID=0;
-pid_t parent=0;
+
 void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
-void execute(char *args[]);
+void execute(char *args[],int background,char inputBuffer[]);
 struct background_proc{
     pid_t pid;
     char input[MAX_LINE];
@@ -22,7 +22,7 @@ struct background_proc{
 
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
-
+BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
 void setup(char inputBuffer[], char *args[],int *background)
 {
 
@@ -104,7 +104,6 @@ int main(void)
     action.sa_flags=0;
     action.sa_handler=catchCtrlD;
     status=sigemptyset(&action.sa_mask);
-    parent = getpid();
 
     actionZ.sa_flags=0;
     actionZ.sa_handler=catchCtrlZ;
@@ -148,7 +147,7 @@ int main(void)
     tcsetattr(0,TCSANOW,&new_termios);
     pid_t cpid;
     BACKGROUND_PROC_PTR current=NULL;
-    BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
+
     int BUILT_IN=0;
     int order=1;
 
@@ -163,25 +162,10 @@ int main(void)
      printf("myshell: ");
         fflush(stdout);
         setup(inputBuffer, args, &background);
-        /*if(background==1){
-            if(BACKGROUND_HEAD==NULL){
-                BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
-                strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
-                BACKGROUND_HEAD->next=NULL;
 
-            }
-            else {
-                while (current->next!=NULL)
-                    current=current->next;
-            }
-            current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
-            current=current->next;
-            strcpy((char *) current->input, (char *) args);
-            current->next=NULL;
-        }
         if(strcmp(args[0],"ps_all")==0){
             BUILT_IN=1;
-        }*/
+        }
 
         if(BUILT_IN==0){
             cpid=fork();
@@ -190,10 +174,31 @@ int main(void)
         else if(cpid==0 ){
               /*  printf("%d",background);
                 fflush(stdout);*/
-            execute(args);
-        }
+
+            execute(args,background, inputBuffer);}
+
         else{
             FOREGROUND_PID=cpid;
+            if(background==1){
+                if(BACKGROUND_HEAD==NULL){
+                    BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                    strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
+                    BACKGROUND_HEAD->pid=cpid;
+                    BACKGROUND_HEAD->next=NULL;
+
+                }
+                else {
+                    current=BACKGROUND_HEAD;
+                    while (current->next!=NULL)
+                        current=current->next;
+
+                    current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                    current=current->next;
+                    strcpy((char *) current->input, (char *) inputBuffer);
+                    current->pid=cpid;
+                    current->next=NULL; }
+
+            }
             if(background==0)
             while(waitpid(-1,NULL,WNOHANG)>=0);
         }
@@ -201,12 +206,17 @@ int main(void)
 
         }
         else{
-            /*if(BUILT_IN==1){
-                current=BACKGROUND_HEAD;
-                while(current!=NULL){
-                    printf("%s (PID=%ld) \n",current->input,current->pid);
+            if(BUILT_IN==1) {
+                current = BACKGROUND_HEAD;
+                while (current != NULL) {
+                    printf("%s (PID=%d) \n", current->input, current->pid);
+                    fflush(stdout);
+                    current=current->next;
                 }
-            }*/
+                BUILT_IN=0;
+
+            }
+
 
         }
 
@@ -243,7 +253,11 @@ void catchCtrlD(int signalNbr){
     exit(1);
 }
 
-void execute(char *args[]){
+void execute(char *args[],int background,char inputBuffer[]){
+
+
+
+
     char* s = getenv("PATH");
     char delim[]=":\n";
     char * token = strtok(s, delim);
