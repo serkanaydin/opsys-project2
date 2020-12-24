@@ -10,7 +10,7 @@
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
 pid_t FOREGROUND_PID=0;
-
+void catchUserQuit(int sig, siginfo_t * info, void * useless);
 void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
 void execute(char *args[],int background,char inputBuffer[]);
@@ -18,6 +18,7 @@ struct background_proc{
     pid_t pid;
     char input[MAX_LINE];
     struct background_proc* next;
+    int status;
 };
 
 typedef struct background_proc* BACKGROUND_PROC_PTR;
@@ -140,6 +141,12 @@ int main(void)
         perror("Failed HANDLER");
         exit(1);
     }
+    struct sigaction sa;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = catchUserQuit;
+    sigaction(SIGCHLD, &sa, NULL);
+
 
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
@@ -193,6 +200,7 @@ int main(void)
                         BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
                         strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
                         BACKGROUND_HEAD->pid=cpid;
+                        BACKGROUND_HEAD->status=1;
                         BACKGROUND_HEAD->next=NULL;
 
                     }
@@ -205,6 +213,7 @@ int main(void)
                         current=current->next;
                         strcpy((char *) current->input, (char *) inputBuffer);
                         current->pid=cpid;
+                        current->status=1;
                         current->next=NULL; }
 
                 }
@@ -222,11 +231,59 @@ int main(void)
         else{
             if(BUILT_IN==1) {
                 current = BACKGROUND_HEAD;
+                BACKGROUND_PROC_PTR currentFinish;
+                BACKGROUND_PROC_PTR FINISH_HEAD = NULL;
+                BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
                 while (current != NULL) {
-                    printf("%s (PID=%d) \n", current->input, current->pid);
+                    int x=getpgid(current->pid);
+                    if(current->status==0){
+                        if(FINISH_HEAD==NULL){
+                            FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                            FINISH_HEAD->pid=current->pid;
+                            strcpy(FINISH_HEAD->input,current->input);
+                            FINISH_HEAD->next=NULL;
+                            if(BACKGROUND_HEAD==current)
+                                BACKGROUND_HEAD=NULL;
+                            else
+                            old->next=current->next;
+
+                        }
+                        else{
+                            currentFinish=FINISH_HEAD;
+                            while(currentFinish->next!=NULL){
+                                currentFinish=currentFinish->next;
+                            }
+                            currentFinish->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));;
+                            currentFinish=currentFinish->next;
+                            currentFinish->pid=current->pid;
+                            strcpy(currentFinish->input,current->input);
+                            currentFinish->next=NULL;
+                            old->next=current->next;
+
+                        }
+                    }
+                    else{
+                        old=current;
+                    }
+
+
+                    current=current->next;
+                    free(current);
+                }
+
+                current=BACKGROUND_HEAD;
+                while(current!=NULL){
+                    printf("%s %d",current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
+                current=FINISH_HEAD;
+                while(current!=NULL){
+                    printf("FINISHED %s %d",current->input,current->pid);
+                    fflush(stdout);
+                    current=current->next;
+                }
+                free(FINISH_HEAD);
                 BUILT_IN=0;
 
             }
@@ -252,6 +309,18 @@ int main(void)
 
 
 }
+void catchUserQuit(int sig, siginfo_t * info, void * useless){
+    BACKGROUND_PROC_PTR  current;
+    current=BACKGROUND_HEAD;
+    while (current!=NULL)
+    {
+        if(current->pid==info->si_pid){
+            current->status=0;
+            break;
+        }
+        current=current->next;}
+}
+
 void catchCtrlZ(int signalNbr){
     fprintf(stderr,"%d",FOREGROUND_PID);
     if(FOREGROUND_PID!=0){
@@ -271,8 +340,6 @@ void catchCtrlD(int signalNbr){
 }
 
 void execute(char *args[],int background,char inputBuffer[]){
-
-
 
 
     char* s = getenv("PATH");
