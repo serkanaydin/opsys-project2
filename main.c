@@ -24,6 +24,7 @@ struct background_proc{
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
 BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
+BACKGROUND_PROC_PTR FINISH_HEAD = NULL;
 void setup(char inputBuffer[], char *args[],int *background)
 {
 
@@ -61,7 +62,7 @@ void setup(char inputBuffer[], char *args[],int *background)
 
 
 
-    printf(">>%s<<",inputBuffer);
+  //  printf(">>%s<<",inputBuffer);
     for (i=0;i<length;i++){ /* examine every character in the inputBuffer */
 
         switch (inputBuffer[i]){
@@ -96,8 +97,8 @@ void setup(char inputBuffer[], char *args[],int *background)
     }    /* end of for */
     args[ct] = NULL; /* just in case the input line was > 80 */
 
-    for (i = 0; i <= ct; i++)
-        printf("args %d = %s\n",i,args[i]);
+   /* for (i = 0; i <= ct; i++)
+        printf("args %d = %s\n",i,args[i]);*/
 
 } /* end of setup routine */
 
@@ -218,7 +219,7 @@ int main(void)
 
                 }
                 if(background==0 ){
-                    while(waitpid(-1,NULL,WEXITED)>=0);
+
                     while(waitpid(-1,NULL,WNOHANG)>=0);
 
                 }
@@ -232,7 +233,7 @@ int main(void)
             if(BUILT_IN==1) {
                 current = BACKGROUND_HEAD;
                 BACKGROUND_PROC_PTR currentFinish;
-                BACKGROUND_PROC_PTR FINISH_HEAD = NULL;
+
                 BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
                 while (current != NULL) {
                     int x=getpgid(current->pid);
@@ -261,29 +262,37 @@ int main(void)
                             old->next=current->next;
 
                         }
+                        BACKGROUND_PROC_PTR temp=current;
+                        current=current->next;
+                        free(temp);
                     }
                     else{
                         old=current;
+                        current=current->next;
                     }
 
 
-                    current=current->next;
-                    free(current);
+
+
                 }
+                fprintf(stderr,"%s","BACKGROUND PROCESSES\n");
 
                 current=BACKGROUND_HEAD;
                 while(current!=NULL){
-                    printf("%s %d",current->input,current->pid);
+                    printf("%s %d\n",current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
+                fprintf(stderr,"%s","------------------\n");
+                fprintf(stderr,"%s","FINISHED PROCESSES\n");
                 current=FINISH_HEAD;
                 while(current!=NULL){
-                    printf("FINISHED %s %d",current->input,current->pid);
+                    printf("FINISHED %s %d\n",current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
-                free(FINISH_HEAD);
+                fprintf(stderr,"%s","------------------\n");
+                FINISH_HEAD=NULL;
                 BUILT_IN=0;
 
             }
@@ -321,14 +330,27 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
         current=current->next;}
 }
 
-void catchCtrlZ(int signalNbr){
-    fprintf(stderr,"%d",FOREGROUND_PID);
-    if(FOREGROUND_PID!=0){
-        char message[] = "Ctrl-Z was pressed\n";
-        fprintf(stderr,"%s",message);
-        kill(FOREGROUND_PID,SIGKILL);
 
-}
+void catchCtrlZ(int signalNbr){
+    char message[] = "Ctrl-Z was pressed\n";
+
+    if(kill(FOREGROUND_PID,SIGKILL)==0)
+    {
+        fprintf(stderr,"%s",message);
+    }
+    else
+    {
+        kill(BACKGROUND_HEAD->pid,SIGKILL);
+        fprintf(stderr,"%s",message);
+    }
+
+
+
+
+
+
+
+
 
 }
 
