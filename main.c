@@ -35,7 +35,9 @@ void setup(char inputBuffer[], char *args[],int *background)
     ct = 0;
 
     /* read what the user enters on the command line */
+
     length = read(STDIN_FILENO,inputBuffer,MAX_LINE);
+
 
     /* 0 is the system predefined file descriptor for stdin (standard input),
        which is the user's screen in this case. inputBuffer by itself is the
@@ -55,6 +57,8 @@ void setup(char inputBuffer[], char *args[],int *background)
         perror("error reading the command");
         exit(-1);           /* terminate with error code of -1 */
     }
+
+
 
     printf(">>%s<<",inputBuffer);
     for (i=0;i<length;i++){ /* examine every character in the inputBuffer */
@@ -97,8 +101,10 @@ void setup(char inputBuffer[], char *args[],int *background)
 } /* end of setup routine */
 
 int main(void)
-{       struct sigaction action;
-        struct sigaction actionZ;
+{
+
+    struct sigaction action;
+    struct sigaction actionZ;
     int status;
     int statusZ;
     action.sa_flags=0;
@@ -153,55 +159,63 @@ int main(void)
 
 
     while (1) {
+
         background = 0;
+
         //  setup(inputBuffer, args, &background);
         /*setup() calls exit() when Control-D is entered */
 
 
+
+        printf("myshell: ");
         fflush(stdout);
-     printf("myshell: ");
-        fflush(stdout);
+
         setup(inputBuffer, args, &background);
 
-        if(strcmp(args[0],"ps_all")==0){
+        if(args[0]!=NULL &&strcmp(args[0],"ps_all")==0){
             BUILT_IN=1;
         }
 
         if(BUILT_IN==0){
             cpid=fork();
-        if(cpid==-1)
-            perror("Child creation");
-        else if(cpid==0 ){
-              /*  printf("%d",background);
-                fflush(stdout);*/
+            if(cpid==-1)
+                perror("Child creation");
+            else if(cpid==0 ){
+                /*  printf("%d",background);
+                  fflush(stdout);*/
 
-            execute(args,background, inputBuffer);}
+                execute(args,background, inputBuffer);}
 
-        else{
-            FOREGROUND_PID=cpid;
-            if(background==1){
-                if(BACKGROUND_HEAD==NULL){
-                    BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
-                    strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
-                    BACKGROUND_HEAD->pid=cpid;
-                    BACKGROUND_HEAD->next=NULL;
+            else{
+                FOREGROUND_PID=cpid;
+                if(background==1){
+                    if(BACKGROUND_HEAD==NULL){
+                        BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                        strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
+                        BACKGROUND_HEAD->pid=cpid;
+                        BACKGROUND_HEAD->next=NULL;
+
+                    }
+                    else {
+                        current=BACKGROUND_HEAD;
+                        while (current->next!=NULL)
+                            current=current->next;
+
+                        current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                        current=current->next;
+                        strcpy((char *) current->input, (char *) inputBuffer);
+                        current->pid=cpid;
+                        current->next=NULL; }
 
                 }
-                else {
-                    current=BACKGROUND_HEAD;
-                    while (current->next!=NULL)
-                        current=current->next;
+                if(background==0 ){
+                    while(waitpid(-1,NULL,WEXITED)>=0);
+                    while(waitpid(-1,NULL,WNOHANG)>=0);
 
-                    current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
-                    current=current->next;
-                    strcpy((char *) current->input, (char *) inputBuffer);
-                    current->pid=cpid;
-                    current->next=NULL; }
+                }
+
 
             }
-            if(background==0)
-            while(waitpid(-1,NULL,WNOHANG)>=0);
-        }
 
 
         }
@@ -226,11 +240,12 @@ int main(void)
 
 
 
-        /** the steps are:
-        (1) fork a child process using fork()
-        (2) the child process will invoke execv()
-        (3) if background == 0, the parent will wait,
-        otherwise it will invoke the setup() function again. */
+    /** the steps are:
+    (1) fork a child process using fork()
+    (2) the child process will invoke execv()
+    (3) if background == 0, the parent will wait,
+    otherwise it will invoke the setup() function again. */
+
 
 
 
@@ -238,11 +253,13 @@ int main(void)
 
 }
 void catchCtrlZ(int signalNbr){
+    fprintf(stderr,"%d",FOREGROUND_PID);
+    if(FOREGROUND_PID!=0){
+        char message[] = "Ctrl-Z was pressed\n";
+        fprintf(stderr,"%s",message);
+        kill(FOREGROUND_PID,SIGKILL);
 
-if(FOREGROUND_PID!=0){
-    char message[] = "Ctrl-Z was pressed\n";
-    fprintf(stderr,"%s",message);
-    kill(FOREGROUND_PID,SIGKILL);}
+}
 
 }
 
@@ -273,7 +290,7 @@ void execute(char *args[],int background,char inputBuffer[]){
         argument[k] = args[k];
 
     }
-argument[i]=NULL;
+    argument[i]=NULL;
 
 
 
@@ -281,8 +298,8 @@ argument[i]=NULL;
         strcpy(buff,token);
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
 
-    execvp(buff,argument);
-}
+            execvp(buff,argument);
+        }
         token = strtok(NULL, delim);
 
 
