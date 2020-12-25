@@ -7,6 +7,8 @@
 #include <strings.h>
 #include<termios.h>
 #include<wait.h>
+#include <stdio_ext.h>
+
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
 pid_t FOREGROUND_PID=0;
@@ -20,6 +22,7 @@ struct background_proc{
     struct background_proc* next;
     int status;
 };
+int read_err=0;
 
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
@@ -39,7 +42,9 @@ void setup(char inputBuffer[], char *args[],int *background)
     /* read what the user enters on the command line */
 
     length = read(STDIN_FILENO,inputBuffer,MAX_LINE);
-
+if(length==-1){
+    read_err=1;
+}
 
     /* 0 is the system predefined file descriptor for stdin (standard input),
        which is the user's screen in this case. inputBuffer by itself is the
@@ -173,16 +178,23 @@ int main(void)
         //  setup(inputBuffer, args, &background);
         /*setup() calls exit() when Control-D is entered */
 
-
-
         printf("myshell: ");
-        fflush(stdout);
+
+            fflush(stdout);
+
 
         setup(inputBuffer, args, &background);
 
-        if(args[0]!=NULL &&strcmp(args[0],"ps_all")==0){
+
+
+
+        if(args[0]!=NULL ){
+            if(strcmp(args[0],"ps_all")==0)
             BUILT_IN=1;
+            else if(strcmp(args[0],"exit")==0)
+            BUILT_IN=2;
         }
+
 
         if(BUILT_IN==0){
             cpid=fork();
@@ -229,14 +241,12 @@ int main(void)
 
 
         }
-        else{
-            if(BUILT_IN==1) {
+        else if(BUILT_IN==1) {
                 current = BACKGROUND_HEAD;
                 BACKGROUND_PROC_PTR currentFinish;
 
                 BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
                 while (current != NULL) {
-                    int x=getpgid(current->pid);
                     if(current->status==0){
                         if(FINISH_HEAD==NULL){
                             FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
@@ -296,9 +306,14 @@ int main(void)
                 BUILT_IN=0;
 
             }
+        else if(BUILT_IN==2) {
 
-
+            fprintf(stderr,"%s\n","There is/are running process(-/es)");
+            while(wait(NULL)>0);
+            exit(0);
         }
+
+
 
 
     }
@@ -343,15 +358,6 @@ void catchCtrlZ(int signalNbr){
         kill(BACKGROUND_HEAD->pid,SIGKILL);
         fprintf(stderr,"%s",message);
     }
-
-
-
-
-
-
-
-
-
 }
 
 void catchCtrlD(int signalNbr){
@@ -387,7 +393,7 @@ void execute(char *args[],int background,char inputBuffer[]){
         strcpy(buff,token);
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
 
-            execvp(buff,argument);
+            execv(buff,argument);
         }
         token = strtok(NULL, delim);
 
