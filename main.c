@@ -10,22 +10,25 @@
 #include <stdio_ext.h>
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
-struct termios old_termios;
-pid_t FOREGROUND_PID=-1;
-void catchUserQuit(int sig, siginfo_t * info, void * useless);
-void catchCtrlD(int signalNbr);
-void catchCtrlZ(int signalNbr);
-void execute(char *args[],int background,char inputBuffer[]);
 struct background_proc{
     pid_t pid;
     char input[MAX_LINE];
     struct background_proc* next;
     int status;
 };
-int read_err=0;
-
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
+struct termios old_termios;
+pid_t FOREGROUND_PID=-1;
+void catchUserQuit(int sig, siginfo_t * info, void * useless);
+void catchCtrlD(int signalNbr);
+void catchCtrlZ(int signalNbr);
+void execute(char *args[],int background,char inputBuffer[]);
+int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
+
+int read_err=0;
+
+
 BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
 BACKGROUND_PROC_PTR FINISH_HEAD = NULL;
 void setup(char inputBuffer[], char *args[],int *background)
@@ -310,6 +313,7 @@ int main(void)
 
             fprintf(stderr,"%s\n","There is/are running process(-/es)");
             while(wait(NULL)>0);
+            fprintf(stderr,"%s","PROGRAM EXITED\n");
             exit(0);
         }
 
@@ -339,6 +343,7 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
     while (current!=NULL)
     {
         if(current->pid==info->si_pid){
+            fprintf(stderr,"%s %d %s CLOSED\n","BACKGROUND PROCESS: ",current->pid,current->input);
             current->status=0;
             break;
         }
@@ -350,9 +355,13 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
 void catchCtrlZ(int signalNbr){
     char message[] = "Ctrl-Z was pressed\n";
 
-    if(FOREGROUND_PID!=-1 &&kill(FOREGROUND_PID,SIGKILL)==0)
-    {
+    if(FOREGROUND_PID!=-1 &&FOREGROUND_PID!=0 && isBackground(BACKGROUND_HEAD,FOREGROUND_PID) )
+    {    if(kill(FOREGROUND_PID,SIGKILL)==0)
         fprintf(stderr,"%s",message);
+    }
+    else{
+        fprintf(stdout,"%s","\nYOU ARE TRYING TO KILL BACKGROUND PROCESS WITH CTRL-Z\n");
+        exit(1);
     }
 
 
@@ -364,6 +373,16 @@ void catchCtrlD(int signalNbr){
     tcsetattr(0,TCSANOW,&old_termios);
     perror(message);
     exit(1);
+}
+
+int isBackground(BACKGROUND_PROC_PTR head,pid_t pid){
+    BACKGROUND_PROC_PTR current= head;
+    while(current!=NULL){
+        if(current->pid==pid)
+            return 0;
+        current=current->next;
+    }
+    return 1;
 }
 
 void execute(char *args[],int background,char inputBuffer[]){
@@ -401,3 +420,5 @@ void execute(char *args[],int background,char inputBuffer[]){
     }
 
 }
+
+
