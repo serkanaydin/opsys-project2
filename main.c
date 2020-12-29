@@ -11,7 +11,7 @@
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct termios old_termios;
-pid_t FOREGROUND_PID=0;
+pid_t FOREGROUND_PID=-1;
 void catchUserQuit(int sig, siginfo_t * info, void * useless);
 void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
@@ -207,7 +207,7 @@ int main(void)
                 execute(args,background, inputBuffer);}
 
             else{
-                FOREGROUND_PID=cpid;
+
                 if(background==1){
                     if(BACKGROUND_HEAD==NULL){
                         BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
@@ -231,8 +231,8 @@ int main(void)
 
                 }
                 if(background==0 ){
-
-                    while(waitpid(-1,NULL,WNOHANG)>=0);
+                    FOREGROUND_PID=cpid;
+                    while(waitpid(cpid,NULL,WNOHANG)>=0);
 
                 }
 
@@ -343,21 +343,20 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
             break;
         }
         current=current->next;}
+
 }
 
 
 void catchCtrlZ(int signalNbr){
     char message[] = "Ctrl-Z was pressed\n";
 
-    if(kill(FOREGROUND_PID,SIGKILL)==0)
+    if(FOREGROUND_PID!=-1 &&kill(FOREGROUND_PID,SIGKILL)==0)
     {
         fprintf(stderr,"%s",message);
     }
-    else
-    {
-        kill(BACKGROUND_HEAD->pid,SIGKILL);
-        fprintf(stderr,"%s",message);
-    }
+
+
+
 }
 
 void catchCtrlD(int signalNbr){
