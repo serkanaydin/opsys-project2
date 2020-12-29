@@ -412,13 +412,16 @@ void execute(char *args[],int background,char inputBuffer[]){
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
 
             execv(buff,argument);
+
+
         }
         token = strtok(NULL, delim);
 
-
-
     }
 
+    fprintf(stderr,"%s","Command not found\n");
+
+exit(1);
 }
 
 
