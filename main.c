@@ -310,9 +310,9 @@ int main(void)
 
             }
         else if(BUILT_IN==2) {
-
+            if(BACKGROUND_HEAD!=NULL){
             fprintf(stderr,"%s\n","There is/are running process(-/es)");
-            while(wait(NULL)>0);
+            while(wait(NULL)>0);}
             fprintf(stderr,"%s","PROGRAM EXITED\n");
             exit(0);
         }
