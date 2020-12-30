@@ -8,22 +8,28 @@
 #include<termios.h>
 #include<wait.h>
 #include <stdio_ext.h>
+#include <dirent.h>
+#include <fnmatch.h>
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct background_proc{
     pid_t pid;
     char input[MAX_LINE];
+    int order;
     struct background_proc* next;
     int status;
 };
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
+typedef struct File File;
 struct termios old_termios;
 pid_t FOREGROUND_PID=-1;
+int order=0;
 void catchUserQuit(int sig, siginfo_t * info, void * useless);
 void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
 void execute(char *args[],int background,char inputBuffer[]);
+void search(char *args[]);
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
 
 int read_err=0;
@@ -171,7 +177,7 @@ int main(void)
     BACKGROUND_PROC_PTR current=NULL;
 
     int BUILT_IN=0;
-    int order=1;
+
 
 
     while (1) {
@@ -196,6 +202,10 @@ int main(void)
             BUILT_IN=1;
             else if(strcmp(args[0],"exit")==0)
             BUILT_IN=2;
+            else if(strcmp(args[0],"search")==0) {
+                search(args);
+                continue;}
+
         }
 
 
@@ -213,10 +223,12 @@ int main(void)
 
                 if(background==1){
                     if(BACKGROUND_HEAD==NULL){
+                        order=1;
                         BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
                         strcpy((char *) BACKGROUND_HEAD->input, (char *) inputBuffer);
                         BACKGROUND_HEAD->pid=cpid;
                         BACKGROUND_HEAD->status=1;
+                        BACKGROUND_HEAD->order=order;
                         BACKGROUND_HEAD->next=NULL;
 
                     }
@@ -230,6 +242,8 @@ int main(void)
                         strcpy((char *) current->input, (char *) inputBuffer);
                         current->pid=cpid;
                         current->status=1;
+                        order++;
+                        current ->order=order;
                         current->next=NULL; }
 
                 }
@@ -255,9 +269,10 @@ int main(void)
                             FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
                             FINISH_HEAD->pid=current->pid;
                             strcpy(FINISH_HEAD->input,current->input);
+                            FINISH_HEAD->order=current->order;
                             FINISH_HEAD->next=NULL;
-                            if(BACKGROUND_HEAD==current)
-                                BACKGROUND_HEAD=NULL;
+                            if(BACKGROUND_HEAD==current) {
+                                BACKGROUND_HEAD = NULL; }
                             else
                             old->next=current->next;
 
@@ -270,6 +285,7 @@ int main(void)
                             currentFinish->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));;
                             currentFinish=currentFinish->next;
                             currentFinish->pid=current->pid;
+                            currentFinish->order=current->order;
                             strcpy(currentFinish->input,current->input);
                             currentFinish->next=NULL;
                             old->next=current->next;
@@ -292,7 +308,7 @@ int main(void)
 
                 current=BACKGROUND_HEAD;
                 while(current!=NULL){
-                    printf("%s %d\n",current->input,current->pid);
+                    printf("[%d] %s %d\n",current->order,current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
@@ -300,7 +316,7 @@ int main(void)
                 fprintf(stderr,"%s","FINISHED PROCESSES\n");
                 current=FINISH_HEAD;
                 while(current!=NULL){
-                    printf("FINISHED %s %d\n",current->input,current->pid);
+                    printf("[%d] %s %d\n",current->order,current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
@@ -361,7 +377,7 @@ void catchCtrlZ(int signalNbr){
     }
     else{
         fprintf(stdout,"%s","\nYOU ARE TRYING TO KILL BACKGROUND PROCESS WITH CTRL-Z\n");
-        exit(1);
+        kill(getpid(),SIGKILL);
     }
 
 
@@ -422,6 +438,41 @@ void execute(char *args[],int background,char inputBuffer[]){
     fprintf(stderr,"%s","Command not found\n");
 
 exit(1);
+}
+
+struct searchInfo{
+    int lineNum;
+    char line[50];
+    DIR* directory;
+    struct searchInfo*  next;
+};
+
+void search(char *args[]){
+    char* path="./";
+    DIR *dirp=opendir(path);
+
+    struct dirent entry;
+    char buff[50];
+    struct dirent *dp=&entry;
+    while(dp = readdir(dirp))
+    {
+        if((fnmatch("*.c", dp->d_name,0)) == 0 ||(fnmatch("*.h", dp->d_name,0)) == 0
+        ||(fnmatch("*.C", dp->d_name,0)) == 0 ||(fnmatch("*.H", dp->d_name,0)) == 0 )
+        {
+            int lineNum=0;
+         File* file= (File *) fopen(dp->d_name, "r");
+         while(fgets(buff, 50, (FILE *) file)){
+             if((strstr(buff, args[1])) != NULL) {
+
+                 fprintf(stderr,"%d: %s -> %s",lineNum,dp->d_name,buff);
+             }
+            lineNum++;
+         }
+        }
+    }
+
+
+
 }
 
 
