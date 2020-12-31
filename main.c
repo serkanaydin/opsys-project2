@@ -249,7 +249,9 @@ int main(void)
                             FINISH_HEAD->order=current->order;
                             FINISH_HEAD->next=NULL;
                             if(BACKGROUND_HEAD==current) {
-                                BACKGROUND_HEAD = NULL; } //ps_all deletes finished process from background processes's linked list
+                                if(BACKGROUND_HEAD->next==NULL)
+                                BACKGROUND_HEAD = NULL;
+                                else BACKGROUND_HEAD=BACKGROUND_HEAD->next;} //ps_all deletes finished process from background processes's linked list
                             else
                             old->next=current->next;
                         }
@@ -333,6 +335,7 @@ void catchCtrlD(int signalNbr){ //terminates myshell
     perror(message);
     exit(1);
 }
+
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid){
     BACKGROUND_PROC_PTR current= head; //check the pid whether is background process
     while(current!=NULL){
