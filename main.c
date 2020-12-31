@@ -22,9 +22,11 @@ struct background_proc{
 typedef struct background_proc* BACKGROUND_PROC_PTR;
 typedef struct background_proc BACKGROUND_PROC;
 typedef struct File File;
+
 struct termios old_termios;
 pid_t FOREGROUND_PID=-1;
 int order=0;
+
 void catchUserQuit(int sig, siginfo_t * info, void * useless);
 void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
@@ -32,8 +34,6 @@ void execute(char *args[],int background,char inputBuffer[]);
 void search(char *args[]);
 void searchDir(char* path,char *args[] );
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
-
-int read_err=0;
 
 
 BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
@@ -52,9 +52,6 @@ void setup(char inputBuffer[], char *args[],int *background)
     /* read what the user enters on the command line */
 
     length = read(STDIN_FILENO,inputBuffer,MAX_LINE);
-if(length==-1){
-    read_err=1;
-}
 
     /* 0 is the system predefined file descriptor for stdin (standard input),
        which is the user's screen in this case. inputBuffer by itself is the
@@ -108,22 +105,24 @@ if(length==-1){
                     inputBuffer[i-1] = '\0';
 
                 }
-        } /* end of switch */
-    }    /* end of for */
-    args[ct] = NULL; /* just in case the input line was > 80 */
+        }
+    }
+    args[ct] = NULL;
 
-   /* for (i = 0; i <= ct; i++)
-        printf("args %d = %s\n",i,args[i]);*/
 
-} /* end of setup routine */
+
+}
 
 int main(void)
 {
-
     struct sigaction action;
     struct sigaction actionZ;
+    struct sigaction sa;
+
     int status;
     int statusZ;
+    int statusUserQuit;
+
     action.sa_flags=0;
     action.sa_handler=catchCtrlD;
     status=sigemptyset(&action.sa_mask);
@@ -132,41 +131,46 @@ int main(void)
     actionZ.sa_handler=catchCtrlZ;
     statusZ=sigemptyset(&actionZ.sa_mask);
 
+    statusUserQuit=sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = catchUserQuit;
+
+
     if(status==-1)
     {
-        perror("Failed");
+        perror("Failed: CTRL-D");
         exit(1);
     }
     status=sigaction(SIGINT,&action,NULL);
     if(status==-1)
     {
-        perror("Failed HANDLER");
+        perror("Failed HANDLER CTRL-D");
         exit(1);
     }
 
-
-
     if(statusZ==-1)
     {
-        perror("Failed");
+        perror("Failed CTRL-Z");
         exit(1);
     }
     statusZ=sigaction(SIGTSTP,&actionZ,NULL);
     if(statusZ==-1)
     {
-        perror("Failed HANDLER");
+        perror("Failed HANDLER CTRL-Z");
         exit(1);
     }
-    struct sigaction sa;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_SIGINFO;
-    sa.sa_sigaction = catchUserQuit;
-    sigaction(SIGCHLD, &sa, NULL);
 
-
-    char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
-    int background; /* equals 1 if a command is followed by '&' */
-    char *args[MAX_LINE/2 + 1]; /*command line arguments */
+    if( statusUserQuit==-1)
+    {
+        perror("Failed USER QUIT");
+        exit(1);
+    }
+    statusUserQuit=sigaction(SIGCHLD, &sa, NULL);
+    if( statusUserQuit==-1)
+    {
+        perror("Failed HANDLER USER QUIT");
+        exit(1);
+    }
 
     struct termios  new_termios;
     tcgetattr(0,&old_termios);
@@ -174,30 +178,18 @@ int main(void)
     new_termios.c_cc[VEOF]  = 3;
     new_termios.c_cc[VINTR] = 4;
     tcsetattr(0,TCSANOW,&new_termios);
+
+    char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
+    int background; /* equals 1 if a command is followed by '&' */
+    char *args[MAX_LINE/2 + 1]; /*command line arguments */
     pid_t cpid;
     BACKGROUND_PROC_PTR current=NULL;
-
     int BUILT_IN=0;
-
-
-
     while (1) {
-
         background = 0;
-
-        //  setup(inputBuffer, args, &background);
-        /*setup() calls exit() when Control-D is entered */
-
         printf("myshell: ");
-
-            fflush(stdout);
-
-
+        fflush(stdout);
         setup(inputBuffer, args, &background);
-
-
-
-
         if(args[0]!=NULL ){
             if(strcmp(args[0],"ps_all")==0)
             BUILT_IN=1;
@@ -208,20 +200,13 @@ int main(void)
                 continue;}
 
         }
-
-
         if(BUILT_IN==0){
             cpid=fork();
             if(cpid==-1)
-                perror("Child creation");
+                perror("Child creation error");
             else if(cpid==0 ){
-                /*  printf("%d",background);
-                  fflush(stdout);*/
-
                 execute(args,background, inputBuffer);}
-
             else{
-
                 if(background==1){
                     if(BACKGROUND_HEAD==NULL){
                         order=1;
@@ -231,13 +216,11 @@ int main(void)
                         BACKGROUND_HEAD->status=1;
                         BACKGROUND_HEAD->order=order;
                         BACKGROUND_HEAD->next=NULL;
-
                     }
                     else {
                         current=BACKGROUND_HEAD;
                         while (current->next!=NULL)
                             current=current->next;
-
                         current->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
                         current=current->next;
                         strcpy((char *) current->input, (char *) inputBuffer);
@@ -246,23 +229,16 @@ int main(void)
                         order++;
                         current ->order=order;
                         current->next=NULL; }
-
                 }
                 if(background==0 ){
                     FOREGROUND_PID=cpid;
                     while(waitpid(cpid,NULL,WNOHANG)>=0);
-
                 }
-
-
             }
-
-
         }
         else if(BUILT_IN==1) {
                 current = BACKGROUND_HEAD;
                 BACKGROUND_PROC_PTR currentFinish;
-
                 BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
                 while (current != NULL) {
                     if(current->status==0){
@@ -276,7 +252,6 @@ int main(void)
                                 BACKGROUND_HEAD = NULL; }
                             else
                             old->next=current->next;
-
                         }
                         else{
                             currentFinish=FINISH_HEAD;
@@ -290,7 +265,6 @@ int main(void)
                             strcpy(currentFinish->input,current->input);
                             currentFinish->next=NULL;
                             old->next=current->next;
-
                         }
                         BACKGROUND_PROC_PTR temp=current;
                         current=current->next;
@@ -300,13 +274,8 @@ int main(void)
                         old=current;
                         current=current->next;
                     }
-
-
-
-
                 }
                 fprintf(stderr,"%s","BACKGROUND PROCESSES\n");
-
                 current=BACKGROUND_HEAD;
                 while(current!=NULL){
                     printf("[%d] %s %d\n",current->order,current->input,current->pid);
@@ -324,7 +293,6 @@ int main(void)
                 fprintf(stderr,"%s","------------------\n");
                 FINISH_HEAD=NULL;
                 BUILT_IN=0;
-
             }
         else if(BUILT_IN==2) {
             if(BACKGROUND_HEAD!=NULL){
@@ -333,26 +301,7 @@ int main(void)
             fprintf(stderr,"%s","PROGRAM EXITED\n");
             exit(0);
         }
-
-
-
-
     }
-
-
-
-
-    /** the steps are:
-    (1) fork a child process using fork()
-    (2) the child process will invoke execv()
-    (3) if background == 0, the parent will wait,
-    otherwise it will invoke the setup() function again. */
-
-
-
-
-
-
 }
 void catchUserQuit(int sig, siginfo_t * info, void * useless){
     BACKGROUND_PROC_PTR  current;
@@ -365,30 +314,20 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
             break;
         }
         current=current->next;}
-
 }
-
-
 void catchCtrlZ(int signalNbr){
     char message[] = "Ctrl-Z was pressed\n";
-
     if(FOREGROUND_PID!=-1 &&FOREGROUND_PID!=0 && isBackground(BACKGROUND_HEAD,FOREGROUND_PID) )
     {    if(kill(FOREGROUND_PID,SIGKILL)==0)
         fprintf(stderr,"%s",message);
     }
-
-
-
-
 }
-
 void catchCtrlD(int signalNbr){
     char message[] = "Ctrl-D was pressed\n";
     tcsetattr(0,TCSANOW,&old_termios);
     perror(message);
     exit(1);
 }
-
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid){
     BACKGROUND_PROC_PTR current= head;
     while(current!=NULL){
@@ -398,10 +337,7 @@ int isBackground(BACKGROUND_PROC_PTR head,pid_t pid){
     }
     return 1;
 }
-
 void execute(char *args[],int background,char inputBuffer[]){
-
-
     char* s = getenv("PATH");
     char delim[]=":\n";
     char * token = strtok(s, delim);
@@ -415,121 +351,69 @@ void execute(char *args[],int background,char inputBuffer[]){
     char* argument[i+1];
     for(int k=0;k<i;k++) {
         argument[k] = args[k];
-
     }
     argument[i]=NULL;
-
-
-
     while( token != NULL ) {
         strcpy(buff,token);
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
-
             execv(buff,argument);
-
-
         }
         token = strtok(NULL, delim);
-
     }
-
     fprintf(stderr,"%s","Command not found\n");
-
 exit(1);
 }
-
-struct searchInfo{
-    int lineNum;
-    char line[50];
-    DIR* directory;
-    struct searchInfo*  next;
-};
-void subDir(char* path,char *args[]){
-    DIR* dir;
-    struct dirent *ent;
-    if((dir=opendir(path)) != NULL){
-        while (( ent = readdir(dir)) != NULL){
-            if(ent->d_type == DT_DIR && strcmp(ent->d_name, ".") != 0  && strcmp(ent->d_name, "..") != 0){
-                char buff[250];
-                strcpy(buff,path);
-                strcat(buff,ent->d_name);
-                strcat(buff,"/");
-                searchDir(buff,args);
-                subDir(buff,args);
-            }
-        }
-        closedir(dir);
-    }
-}
-
-
-void listdir(const char *name, int indent,char *args[])
-{
+void getSubDir(char *name, int indent,char *args[]){
     DIR *dir;
-    struct dirent *entry;
-
+    struct dirent *dp;
     if (!(dir = opendir(name)))
         return;
-
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR) {
-            char path[1024];
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+    while ((dp = readdir(dir)) != NULL) {
+        if (dp->d_type == DT_DIR) {
+            char path[250];
+            if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
                 continue;
-
-
-            char pathBuff[1024];
             strcpy(path,name);
             strcat(path,"/");
-            strcat(path,entry->d_name);
-            /*
-          if((fnmatch("*.c", pathBuff,0)) == 0 ||(fnmatch("*.h", pathBuff,0)) == 0
-             ||(fnmatch("*.C", pathBuff,0)) == 0 ||(fnmatch("*.H", pathBuff,0)) == 0 )
-          {
-              int lineNum=0;
-              File* file= (File *) fopen(dp->d_name, "r");
-              while(fgets(buff, 250, (FILE *) file)){
-                  if((strstr(buff, (args[1]))) != NULL) {
-                      char buff2[250];
-                      strcpy(buff2,path);
-                      strcat(buff2,dp->d_name);
-                      fprintf(stderr,"%d: %s -> %s",lineNum,buff2,buff);
-                  }
-                  lineNum++;
-              }
-
-          }*/
-
-         searchDir(path,args);
-            listdir(path, indent + 2,args);
-        } else {
-
+            strcat(path,dp->d_name);
+            searchDir(path,args);
+            getSubDir(path, indent + 2,args);
         }
     }
     closedir(dir);
 }
-
-
-
-
 void search(char *args[]){
-
     if(strcmp(args[1],"-r")==0){
-        listdir(".", 0,args);
+        int len;
+        len=strlen(args[2]);
+        char args2[len-2];
+        for(int i=1;i<(len-1);i++){
+            args2[i-1]= args[2][i];
+        }
+        args2[len-2] ='\0';
+        strcpy(args[2],args2);
+        getSubDir(".", 0,args);
+        searchDir(".",args);
     }
-   searchDir(".",args);
+    else{
+        int len;
+        len=strlen(args[1]);
+        char args1[len-2];
+        for(int i=1;i<len-1;i++){
+            args1[i-1]= args[1][i];
+        }
+        args1[len-2] ='\0';
+        strcpy(args[1],args1);
+        fprintf(stderr,"%s",args[1]);
+        searchDir(".",args);
+    }
 }
-
-
-
-
 void searchDir(char* path,char *args[] ){
     DIR *dirp=opendir(path);
     struct dirent entry;
-    char buff[1024];
+    char buff[250];
     struct dirent *dp=&entry;
-    while(dp = readdir(dirp))
-    {
+    while(dp = readdir(dirp)){
         if((fnmatch("*.c", dp->d_name,0)) == 0 ||(fnmatch("*.h", dp->d_name,0)) == 0
            ||(fnmatch("*.C", dp->d_name,0)) == 0 ||(fnmatch("*.H", dp->d_name,0)) == 0 )
         {
@@ -539,24 +423,20 @@ void searchDir(char* path,char *args[] ){
             strcat(pathBuff,"/");
             strcat(pathBuff,dp->d_name);
             File* file= (File *) fopen(pathBuff, "r");
-            while(fgets(buff, 1024, (FILE *) file)){
+            while(fgets(buff, 250, (FILE *) file)){
                 if(strcmp(args[1],"-r")==0) {
                     if ((strstr(buff, (args[2]))) != NULL) {
-
-                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
-                    }
-                }else  {
-                    if ((strstr(buff, (args[1]))) != NULL) {
-
                         fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
                     }
                 }
-
+                else  {
+                    if ((strstr(buff, (args[1]))) != NULL) {
+                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
+                    }
+                }
                 lineNum++;
             }
-
         }
-
     }
 }
 
