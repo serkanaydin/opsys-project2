@@ -177,7 +177,7 @@ int main(void)
     new_termios             = old_termios;
     new_termios.c_cc[VEOF]  = 3;
     new_termios.c_cc[VINTR] = 4;
-    tcsetattr(0,TCSANOW,&new_termios);
+    tcsetattr(0,TCSANOW,&new_termios); //TO TERMINATE MAIN PROGRAM WITH CTRL-D
 
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
@@ -200,14 +200,14 @@ int main(void)
                 continue;}
 
         }
-        if(BUILT_IN==0){
+        if(BUILT_IN==0){ //IF PROCESS IS NOT BUILT-IN PROGRAM FORKS TO EXECUTE PROGRAM
             cpid=fork();
             if(cpid==-1)
                 perror("Child creation error");
-            else if(cpid==0 ){
+            else if(cpid==0 ){ //CHILD EXECUTES PROGRAM
                 execute(args,background, inputBuffer);}
-            else{
-                if(background==1){
+            else{ // PARENT (MAIN PROGRAM) RUNS
+                if(background==1){ //IF NEW PROCESS IS BACKGROUND THEN PROGRAM ADDS TO BACKGROUND PROCESSES'S LINKEDLIST
                     if(BACKGROUND_HEAD==NULL){
                         order=1;
                         BACKGROUND_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
@@ -230,18 +230,18 @@ int main(void)
                         current ->order=order;
                         current->next=NULL; }
                 }
-                if(background==0 ){
+                if(background==0 ){ //IF NEW PROCESS IS FOREGROUND THAN PROGRAM WAITS UNTIL THE PROCESS WILL BE TERMINATED
                     FOREGROUND_PID=cpid;
                     while(waitpid(cpid,NULL,WNOHANG)>=0);
                 }
             }
         }
-        else if(BUILT_IN==1) {
+        else if(BUILT_IN==1) { //BUILT_IN=1 MEANS USER PROMPTED ps_all COMMAND
                 current = BACKGROUND_HEAD;
                 BACKGROUND_PROC_PTR currentFinish;
                 BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
-                while (current != NULL) {
-                    if(current->status==0){
+                while (current != NULL) { //status=0 means the background process was terminated
+                    if(current->status==0){  // if process was terminated then ps_all adds the process to finished process
                         if(FINISH_HEAD==NULL){
                             FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
                             FINISH_HEAD->pid=current->pid;
@@ -249,7 +249,7 @@ int main(void)
                             FINISH_HEAD->order=current->order;
                             FINISH_HEAD->next=NULL;
                             if(BACKGROUND_HEAD==current) {
-                                BACKGROUND_HEAD = NULL; }
+                                BACKGROUND_HEAD = NULL; } //ps_all deletes finished process from background processes's linked list
                             else
                             old->next=current->next;
                         }
@@ -268,14 +268,14 @@ int main(void)
                         }
                         BACKGROUND_PROC_PTR temp=current;
                         current=current->next;
-                        free(temp);
+                        free(temp); //freed finished background process's space
                     }
                     else{
                         old=current;
                         current=current->next;
                     }
                 }
-                fprintf(stderr,"%s","BACKGROUND PROCESSES\n");
+                fprintf(stderr,"%s","BACKGROUND PROCESSES\n"); //ps_all lists background processes
                 current=BACKGROUND_HEAD;
                 while(current!=NULL){
                     printf("[%d] %s %d\n",current->order,current->input,current->pid);
@@ -284,20 +284,22 @@ int main(void)
                 }
                 fprintf(stderr,"%s","------------------\n");
                 fprintf(stderr,"%s","FINISHED PROCESSES\n");
-                current=FINISH_HEAD;
+
+                current=FINISH_HEAD; //ps_all lists finished background processes
                 while(current!=NULL){
                     printf("[%d] %s %d\n",current->order,current->input,current->pid);
                     fflush(stdout);
                     current=current->next;
                 }
                 fprintf(stderr,"%s","------------------\n");
-                FINISH_HEAD=NULL;
+                FINISH_HEAD=NULL; //ps_all clears finished background processes's list
                 BUILT_IN=0;
             }
-        else if(BUILT_IN==2) {
+        else if(BUILT_IN==2) { //BUILT_IN=2 MEANS USER PROMPTED exit COMMAND
             if(BACKGROUND_HEAD!=NULL){
-            fprintf(stderr,"%s\n","There is/are running process(-/es)");
-            while(wait(NULL)>0);}
+            fprintf(stderr,"%s\n","There is/are running process(-/es)"); //program warns users about existence of background process
+            while(wait(NULL)>0); //program waits until all the background processes will be terminated
+            }
             fprintf(stderr,"%s","PROGRAM EXITED\n");
             exit(0);
         }
@@ -309,8 +311,8 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
     while (current!=NULL)
     {
         if(current->pid==info->si_pid){
-            fprintf(stderr,"%s %d %s CLOSED\n","BACKGROUND PROCESS: ",current->pid,current->input);
-            current->status=0;
+            fprintf(stderr,"%s %d %s CLOSED BY USER\n","PROCESS: ",current->pid,current->input);
+            current->status=0; //says to the main program the process was terminated
             break;
         }
         current=current->next;}
@@ -319,17 +321,20 @@ void catchCtrlZ(int signalNbr){
     char message[] = "Ctrl-Z was pressed\n";
     if(FOREGROUND_PID!=-1 &&FOREGROUND_PID!=0 && isBackground(BACKGROUND_HEAD,FOREGROUND_PID) )
     {    if(kill(FOREGROUND_PID,SIGKILL)==0)
-        fprintf(stderr,"%s",message);
+        fprintf(stderr,"%s",message); //if foreground program exists then handler kills the program
+    }
+    else{
+        perror("THERE IS NO FOREGROUND PROCESS");
     }
 }
-void catchCtrlD(int signalNbr){
+void catchCtrlD(int signalNbr){ //terminates myshell
     char message[] = "Ctrl-D was pressed\n";
     tcsetattr(0,TCSANOW,&old_termios);
     perror(message);
     exit(1);
 }
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid){
-    BACKGROUND_PROC_PTR current= head;
+    BACKGROUND_PROC_PTR current= head; //check the pid whether is background process
     while(current!=NULL){
         if(current->pid==pid)
             return 0;
@@ -353,7 +358,7 @@ void execute(char *args[],int background,char inputBuffer[]){
         argument[k] = args[k];
     }
     argument[i]=NULL;
-    while( token != NULL ) {
+    while( token != NULL ) { //tries all the environment paths until executable was found
         strcpy(buff,token);
         if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
             execv(buff,argument);
@@ -364,7 +369,7 @@ void execute(char *args[],int background,char inputBuffer[]){
 exit(1);
 }
 void getSubDir(char *name, int indent,char *args[]){
-    DIR *dir;
+    DIR *dir; //get subdirectories of current path recursively and calls searchDir to find argument
     struct dirent *dp;
     if (!(dir = opendir(name)))
         return;
@@ -382,8 +387,12 @@ void getSubDir(char *name, int indent,char *args[]){
     }
     closedir(dir);
 }
-void search(char *args[]){
+void search(char *args[]){ //makes error control and calls functions depending on "-r" argument
+    if(args[1]==NULL)
+        perror("No argument was given to search command");
     if(strcmp(args[1],"-r")==0){
+        if(args[2]==NULL)
+            perror("No argument was given to search -r command");
         int len;
         len=strlen(args[2]);
         char args2[len-2];
@@ -408,7 +417,7 @@ void search(char *args[]){
         searchDir(".",args);
     }
 }
-void searchDir(char* path,char *args[] ){
+void searchDir(char* path,char *args[] ){ //searchs current path for source codes.
     DIR *dirp=opendir(path);
     struct dirent entry;
     char buff[250];
