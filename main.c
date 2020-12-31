@@ -10,6 +10,8 @@
 #include <stdio_ext.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 struct background_proc{
@@ -38,7 +40,6 @@ int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
 void standartWrite(char *args[]);
 void standartAppend(char *args[]);
 void standartInput(char *args[]);
-void standartError(char *args[]);
 void stdoutCommand(char *args[]);
 char* getPath();
 int getArgumentCount(char *args[]);
@@ -63,9 +64,9 @@ void setup(char inputBuffer[], char *args[],int *background)
 
 
     int length, /* # of characters in the command line */
-    i,      /* loop index for accessing inputBuffer array */
-    start,  /* index where beginning of next command parameter is */
-    ct;     /* index of where to place the next parameter into args[] */
+    i, /* loop index for accessing inputBuffer array */
+    start, /* index where beginning of next command parameter is */
+    ct; /* index of where to place the next parameter into args[] */
 
     ct = 0;
 
@@ -74,41 +75,41 @@ void setup(char inputBuffer[], char *args[],int *background)
     length = read(STDIN_FILENO,inputBuffer,MAX_LINE);
 
     /* 0 is the system predefined file descriptor for stdin (standard input),
-       which is the user's screen in this case. inputBuffer by itself is the
-       same as &inputBuffer[0], i.e. the starting address of where to store
-       the command that is read, and length holds the number of characters
-       read in. inputBuffer is not a null terminated C-string. */
+    which is the user's screen in this case. inputBuffer by itself is the
+    same as &inputBuffer[0], i.e. the starting address of where to store
+    the command that is read, and length holds the number of characters
+    read in. inputBuffer is not a null terminated C-string. */
 
     start = -1;
     if (length == 0)
-        exit(0);            /* ^d was entered, end of user command stream */
+        exit(0); /* ^d was entered, end of user command stream */
 
 /* the signal interrupted the read system call */
 /* if the process is in the read() system call, read returns -1
-  However, if this occurs, errno is set to EINTR. We can check this  value
-  and disregard the -1 value */
+ However, if this occurs, errno is set to EINTR. We can check this value
+ and disregard the -1 value */
     if ( (length < 0) && (errno != EINTR) ) {
         perror("error reading the command");
-        exit(-1);           /* terminate with error code of -1 */
+        exit(-1); /* terminate with error code of -1 */
     }
 
 
 
-  //  printf(">>%s<<",inputBuffer);
+    // printf(">>%s<<",inputBuffer);
     for (i=0;i<length;i++){ /* examine every character in the inputBuffer */
 
         switch (inputBuffer[i]){
             case ' ':
-            case '\t' :               /* argument separators */
+            case '\t' : /* argument separators */
                 if(start != -1){
-                    args[ct] = &inputBuffer[start];    /* set up pointer */
+                    args[ct] = &inputBuffer[start]; /* set up pointer */
                     ct++;
                 }
                 inputBuffer[i] = '\0'; /* add a null char; make a C string */
                 start = -1;
                 break;
 
-            case '\n':                 /* should be the final char examined */
+            case '\n': /* should be the final char examined */
                 if (start != -1){
                     args[ct] = &inputBuffer[start];
                     ct++;
@@ -117,11 +118,11 @@ void setup(char inputBuffer[], char *args[],int *background)
                 args[ct] = NULL; /* no more arguments to this command */
                 break;
 
-            default :             /* some other character */
+            default : /* some other character */
                 if (start == -1)
                     start = i;
                 if (inputBuffer[i] == '&'){
-                    *background  = 1;
+                    *background = 1;
                     inputBuffer[i-1] = '\0';
 
                 }
@@ -192,10 +193,10 @@ int main(void)
         exit(1);
     }
 
-    struct termios  new_termios;
+    struct termios new_termios;
     tcgetattr(0,&old_termios);
-    new_termios             = old_termios;
-    new_termios.c_cc[VEOF]  = 3;
+    new_termios = old_termios;
+    new_termios.c_cc[VEOF] = 3;
     new_termios.c_cc[VINTR] = 4;
     tcsetattr(0,TCSANOW,&new_termios); //TO TERMINATE MAIN PROGRAM WITH CTRL-D
 
@@ -212,27 +213,33 @@ int main(void)
         setup(inputBuffer, args, &background);
         if(args[0]!=NULL ){
             if(strcmp(args[0],"ps_all")==0)
-            BUILT_IN=1;
+                BUILT_IN=1;
             else if(strcmp(args[0],"exit")==0)
-            BUILT_IN=2;
+                BUILT_IN=2;
             else if(strcmp(args[0],"search")==0) {
                 search(args);
                 continue;}
 
-        }
+        }else continue;
 
         int argumentCount = getArgumentCount(args);
-        if( argumentCount >= 4 && strcmp(args[argumentCount-2],">") == 0 && strcmp(args[argumentCount-4],"<") == 0)
+        if( argumentCount >= 4 && strcmp(args[argumentCount-2],">") == 0 && strcmp(args[argumentCount-4],"<") == 0) {
             stdoutCommand(args);
-        else if(strcmp(args[argumentCount-2],">") == 0)
-            standartWrite(args);
-        else if(strcmp(args[argumentCount-2],">>") == 0)
-            standartAppend(args);
-        else if(strcmp(args[argumentCount-2],"<") == 0)
-            standartInput(args);
-        else if(strcmp(args[argumentCount-2],"2>") == 0)
-            standartError(args);
-    }
+            BUILT_IN=3;
+            continue;
+        }
+        else if(strcmp(args[argumentCount-2],">") == 0) { standartWrite(args);
+            BUILT_IN=3;
+            continue;}
+        else if(strcmp(args[argumentCount-2],">>") == 0) { standartAppend(args);
+            BUILT_IN=3;
+            continue;}
+        else if(strcmp(args[argumentCount-2],"<") == 0) { standartInput(args);
+            BUILT_IN=3;
+            continue;}
+        else if(strcmp(args[argumentCount-2],"2>") == 0) {
+            BUILT_IN=3;
+            continue;}
 
 
         if(BUILT_IN==0){ //IF PROCESS IS NOT BUILT-IN PROGRAM FORKS TO EXECUTE PROGRAM
@@ -272,70 +279,70 @@ int main(void)
             }
         }
         else if(BUILT_IN==1) { //BUILT_IN=1 MEANS USER PROMPTED ps_all COMMAND
-                current = BACKGROUND_HEAD;
-                BACKGROUND_PROC_PTR currentFinish;
-                BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
-                while (current != NULL) { //status=0 means the background process was terminated
-                    if(current->status==0){  // if process was terminated then ps_all adds the process to finished process
-                        if(FINISH_HEAD==NULL){
-                            FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
-                            FINISH_HEAD->pid=current->pid;
-                            strcpy(FINISH_HEAD->input,current->input);
-                            FINISH_HEAD->order=current->order;
-                            FINISH_HEAD->next=NULL;
-                            if(BACKGROUND_HEAD==current) {
-                                if(BACKGROUND_HEAD->next==NULL)
+            current = BACKGROUND_HEAD;
+            BACKGROUND_PROC_PTR currentFinish;
+            BACKGROUND_PROC_PTR old=BACKGROUND_HEAD;
+            while (current != NULL) { //status=0 means the background process was terminated
+                if(current->status==0){ // if process was terminated then ps_all adds the process to finished process
+                    if(FINISH_HEAD==NULL){
+                        FINISH_HEAD=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));
+                        FINISH_HEAD->pid=current->pid;
+                        strcpy(FINISH_HEAD->input,current->input);
+                        FINISH_HEAD->order=current->order;
+                        FINISH_HEAD->next=NULL;
+                        if(BACKGROUND_HEAD==current) {
+                            if(BACKGROUND_HEAD->next==NULL)
                                 BACKGROUND_HEAD = NULL;
-                                else BACKGROUND_HEAD=BACKGROUND_HEAD->next;} //ps_all deletes finished process from background processes's linked list
-                            else
+                            else BACKGROUND_HEAD=BACKGROUND_HEAD->next;} //ps_all deletes finished process from background processes's linked list
+                        else
                             old->next=current->next;
-                        }
-                        else{
-                            currentFinish=FINISH_HEAD;
-                            while(currentFinish->next!=NULL){
-                                currentFinish=currentFinish->next;
-                            }
-                            currentFinish->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));;
-                            currentFinish=currentFinish->next;
-                            currentFinish->pid=current->pid;
-                            currentFinish->order=current->order;
-                            strcpy(currentFinish->input,current->input);
-                            currentFinish->next=NULL;
-                            old->next=current->next;
-                        }
-                        BACKGROUND_PROC_PTR temp=current;
-                        current=current->next;
-                        free(temp); //freed finished background process's space
                     }
                     else{
-                        old=current;
-                        current=current->next;
+                        currentFinish=FINISH_HEAD;
+                        while(currentFinish->next!=NULL){
+                            currentFinish=currentFinish->next;
+                        }
+                        currentFinish->next=(BACKGROUND_PROC_PTR)(malloc(sizeof(BACKGROUND_PROC)));;
+                        currentFinish=currentFinish->next;
+                        currentFinish->pid=current->pid;
+                        currentFinish->order=current->order;
+                        strcpy(currentFinish->input,current->input);
+                        currentFinish->next=NULL;
+                        old->next=current->next;
                     }
+                    BACKGROUND_PROC_PTR temp=current;
+                    current=current->next;
+                    free(temp); //freed finished background process's space
                 }
-                fprintf(stderr,"%s","BACKGROUND PROCESSES\n"); //ps_all lists background processes
-                current=BACKGROUND_HEAD;
-                while(current!=NULL){
-                    printf("[%d] %s %d\n",current->order,current->input,current->pid);
-                    fflush(stdout);
+                else{
+                    old=current;
                     current=current->next;
                 }
-                fprintf(stderr,"%s","------------------\n");
-                fprintf(stderr,"%s","FINISHED PROCESSES\n");
-
-                current=FINISH_HEAD; //ps_all lists finished background processes
-                while(current!=NULL){
-                    printf("[%d] %s %d\n",current->order,current->input,current->pid);
-                    fflush(stdout);
-                    current=current->next;
-                }
-                fprintf(stderr,"%s","------------------\n");
-                FINISH_HEAD=NULL; //ps_all clears finished background processes's list
-                BUILT_IN=0;
             }
+            fprintf(stderr,"%s","BACKGROUND PROCESSES\n"); //ps_all lists background processes
+            current=BACKGROUND_HEAD;
+            while(current!=NULL){
+                printf("[%d] %s %d\n",current->order,current->input,current->pid);
+                fflush(stdout);
+                current=current->next;
+            }
+            fprintf(stderr,"%s","------------------\n");
+            fprintf(stderr,"%s","FINISHED PROCESSES\n");
+
+            current=FINISH_HEAD; //ps_all lists finished background processes
+            while(current!=NULL){
+                printf("[%d] %s %d\n",current->order,current->input,current->pid);
+                fflush(stdout);
+                current=current->next;
+            }
+            fprintf(stderr,"%s","------------------\n");
+            FINISH_HEAD=NULL; //ps_all clears finished background processes's list
+            BUILT_IN=0;
+        }
         else if(BUILT_IN==2) { //BUILT_IN=2 MEANS USER PROMPTED exit COMMAND
             if(BACKGROUND_HEAD!=NULL){
-            fprintf(stderr,"%s\n","There is/are running process(-/es)"); //program warns users about existence of background process
-            while(wait(NULL)>0); //program waits until all the background processes will be terminated
+                fprintf(stderr,"%s\n","There is/are running process(-/es)"); //program warns users about existence of background process
+                while(wait(NULL)>0); //program waits until all the background processes will be terminated
             }
             fprintf(stderr,"%s","PROGRAM EXITED\n");
             exit(0);
@@ -343,7 +350,7 @@ int main(void)
     }
 }
 void catchUserQuit(int sig, siginfo_t * info, void * useless){
-    BACKGROUND_PROC_PTR  current;
+    BACKGROUND_PROC_PTR current;
     current=BACKGROUND_HEAD;
     while (current!=NULL)
     {
@@ -357,8 +364,8 @@ void catchUserQuit(int sig, siginfo_t * info, void * useless){
 void catchCtrlZ(int signalNbr){
     char message[] = "Ctrl-Z was pressed\n";
     if(FOREGROUND_PID!=-1 &&FOREGROUND_PID!=0 && isBackground(BACKGROUND_HEAD,FOREGROUND_PID) )
-    {    if(kill(FOREGROUND_PID,SIGKILL)==0)
-        fprintf(stderr,"%s",message); //if foreground program exists then handler kills the program
+    { if(kill(FOREGROUND_PID,SIGKILL)==0)
+            fprintf(stderr,"%s",message); //if foreground program exists then handler kills the program
     }
     else{
         perror("THERE IS NO FOREGROUND PROCESS");
@@ -398,13 +405,13 @@ void execute(char *args[],int background,char inputBuffer[]){
     argument[i]=NULL;
     while( token != NULL ) { //tries all the environment paths until executable was found
         strcpy(buff,token);
-        if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0  ){
+        if( access( strcat(strcat(buff,"/"),args[0]), F_OK ) == 0 ){
             execv(buff,argument);
         }
         token = strtok(NULL, delim);
     }
     fprintf(stderr,"%s","Command not found\n");
-exit(1);
+    exit(1);
 }
 void getSubDir(char *name, int indent,char *args[]){
     DIR *dir; //get subdirectories of current path recursively and calls searchDir to find argument
@@ -475,7 +482,7 @@ void searchDir(char* path,char *args[] ){ //searchs current path for source code
                         fprintf(stderr, "\t%d: %s -> %s", lineNum, pathBuff, buff);
                     }
                 }
-                else  {
+                else {
                     if ((strstr(buff, (args[1]))) != NULL) {
                         fprintf(stderr, "\t%d: %s -> %s", lineNum, pathBuff, buff);
                     }
@@ -591,41 +598,6 @@ void standartInput(char *args[]){
     }
 }
 
-void standartError(char *args[]) {
-    int argumentCount = getArgumentCount(args);
-    pid_t cpid;
-    cpid = fork();
-    if (cpid == -1) {
-        fprintf(stderr,"%s","child is not created");
-        return;
-    }
-    else if (cpid == 0) {
-        int fd;
-        if (fd = open(args[argumentCount - 1], CREATE_FLAGS, CREATE_MODE) == -1) {
-            fprintf(stderr,"%s","file is not opened");
-            return;
-        }
-        dup2(fd, STDERR_FILENO);
-        close(fd);
-        char *path;
-        path = getPath(args[0]);
-
-        if(path == NULL)
-        {
-            fprintf(stderr,"%s","path is not accessible");
-            return;
-        }
-        args[argumentCount-1] = NULL;
-        args[argumentCount-2] = NULL;
-        if(execv(args[0], args) == -1)
-            fprintf(stderr,"%s","path is not accessible");
-    }
-    else if (cpid > 0) {
-        waitpid(cpid, NULL, 0);
-        return;
-    }
-}
-
 void stdoutCommand(char *args[]){
     int argumentCount = getArgumentCount(args);
     pid_t cpid;
@@ -647,17 +619,15 @@ void stdoutCommand(char *args[]){
 
         char *path;
         path = getPath(args[0]);
+        args[argumentCount-2] = NULL;
+        args[argumentCount-4] = NULL;
         if(path == NULL)
         {
             fprintf(stderr,"%s","path is not accessible");
             return;
         }
-        args[argumentCount-5] = NULL;
-        args[argumentCount-4] = NULL;
-        args[argumentCount-3] = NULL;
-        args[argumentCount-2] = NULL;
-        args[argumentCount-1] = NULL;
-        if(execv(args[0], args) == -1)
+
+        if(execv(path, args) == -1)
             fprintf(stderr,"%s","not executed");
 
     }
@@ -688,4 +658,3 @@ char* getPath(char* fileName){
     }
     return NULL;
 }
-
