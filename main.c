@@ -30,6 +30,7 @@ void catchCtrlD(int signalNbr);
 void catchCtrlZ(int signalNbr);
 void execute(char *args[],int background,char inputBuffer[]);
 void search(char *args[]);
+void searchDir(char* path,char *args[] );
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
 
 int read_err=0;
@@ -375,10 +376,7 @@ void catchCtrlZ(int signalNbr){
     {    if(kill(FOREGROUND_PID,SIGKILL)==0)
         fprintf(stderr,"%s",message);
     }
-    else{
-        fprintf(stdout,"%s","\nYOU ARE TRYING TO KILL BACKGROUND PROCESS WITH CTRL-Z\n");
-        kill(getpid(),SIGKILL);
-    }
+
 
 
 
@@ -446,33 +444,120 @@ struct searchInfo{
     DIR* directory;
     struct searchInfo*  next;
 };
+void subDir(char* path,char *args[]){
+    DIR* dir;
+    struct dirent *ent;
+    if((dir=opendir(path)) != NULL){
+        while (( ent = readdir(dir)) != NULL){
+            if(ent->d_type == DT_DIR && strcmp(ent->d_name, ".") != 0  && strcmp(ent->d_name, "..") != 0){
+                char buff[250];
+                strcpy(buff,path);
+                strcat(buff,ent->d_name);
+                strcat(buff,"/");
+                searchDir(buff,args);
+                subDir(buff,args);
+            }
+        }
+        closedir(dir);
+    }
+}
+
+
+void listdir(const char *name, int indent,char *args[])
+{
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!(dir = opendir(name)))
+        return;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR) {
+            char path[1024];
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                continue;
+
+
+            char pathBuff[1024];
+            strcpy(path,name);
+            strcat(path,"/");
+            strcat(path,entry->d_name);
+            /*
+          if((fnmatch("*.c", pathBuff,0)) == 0 ||(fnmatch("*.h", pathBuff,0)) == 0
+             ||(fnmatch("*.C", pathBuff,0)) == 0 ||(fnmatch("*.H", pathBuff,0)) == 0 )
+          {
+              int lineNum=0;
+              File* file= (File *) fopen(dp->d_name, "r");
+              while(fgets(buff, 250, (FILE *) file)){
+                  if((strstr(buff, (args[1]))) != NULL) {
+                      char buff2[250];
+                      strcpy(buff2,path);
+                      strcat(buff2,dp->d_name);
+                      fprintf(stderr,"%d: %s -> %s",lineNum,buff2,buff);
+                  }
+                  lineNum++;
+              }
+
+          }*/
+
+         searchDir(path,args);
+            listdir(path, indent + 2,args);
+        } else {
+
+        }
+    }
+    closedir(dir);
+}
+
+
+
 
 void search(char *args[]){
-    char* path="./";
-    DIR *dirp=opendir(path);
 
+    if(strcmp(args[1],"-r")==0){
+        listdir(".", 0,args);
+    }
+   searchDir(".",args);
+}
+
+
+
+
+void searchDir(char* path,char *args[] ){
+    DIR *dirp=opendir(path);
     struct dirent entry;
-    char buff[50];
+    char buff[1024];
     struct dirent *dp=&entry;
     while(dp = readdir(dirp))
     {
         if((fnmatch("*.c", dp->d_name,0)) == 0 ||(fnmatch("*.h", dp->d_name,0)) == 0
-        ||(fnmatch("*.C", dp->d_name,0)) == 0 ||(fnmatch("*.H", dp->d_name,0)) == 0 )
+           ||(fnmatch("*.C", dp->d_name,0)) == 0 ||(fnmatch("*.H", dp->d_name,0)) == 0 )
         {
             int lineNum=0;
-         File* file= (File *) fopen(dp->d_name, "r");
-         while(fgets(buff, 50, (FILE *) file)){
-             if((strstr(buff, args[1])) != NULL) {
+            char pathBuff[250];
+            strcpy(pathBuff,path);
+            strcat(pathBuff,"/");
+            strcat(pathBuff,dp->d_name);
+            File* file= (File *) fopen(pathBuff, "r");
+            while(fgets(buff, 1024, (FILE *) file)){
+                if(strcmp(args[1],"-r")==0) {
+                    if ((strstr(buff, (args[2]))) != NULL) {
 
-                 fprintf(stderr,"%d: %s -> %s",lineNum,dp->d_name,buff);
-             }
-            lineNum++;
-         }
+                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
+                    }
+                }else  {
+                    if ((strstr(buff, (args[1]))) != NULL) {
+
+                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
+                    }
+                }
+
+                lineNum++;
+            }
+
         }
+
     }
-
-
-
 }
 
 
