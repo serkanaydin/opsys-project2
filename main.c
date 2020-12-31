@@ -35,6 +35,26 @@ void search(char *args[]);
 void searchDir(char* path,char *args[] );
 int isBackground(BACKGROUND_PROC_PTR head,pid_t pid);
 
+void standartWrite(char *args[]);
+void standartAppend(char *args[]);
+void standartInput(char *args[]);
+void standartError(char *args[]);
+void stdoutCommand(char *args[]);
+char* getPath();
+int getArgumentCount(char *args[]);
+int getArgumentCount(char *args[]){
+    int i= 0;
+    while(args[i]!=NULL)
+        i++;
+    return i;
+}
+
+
+#define CREATE_FLAGS (O_WRONLY | O_CREAT | O_TRUNC)
+#define CREATE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH )
+#define CREATE_APPEND (O_WRONLY | O_APPEND | O_CREAT )
+#define CREATE_INPUTFLAGS (O_RDWR)
+
 
 BACKGROUND_PROC_PTR BACKGROUND_HEAD=NULL;
 BACKGROUND_PROC_PTR FINISH_HEAD = NULL;
@@ -200,6 +220,21 @@ int main(void)
                 continue;}
 
         }
+
+        int argumentCount = getArgumentCount(args);
+        if( argumentCount >= 4 && strcmp(args[argumentCount-2],">") == 0 && strcmp(args[argumentCount-4],"<") == 0)
+            stdoutCommand(args);
+        else if(strcmp(args[argumentCount-2],">") == 0)
+            standartWrite(args);
+        else if(strcmp(args[argumentCount-2],">>") == 0)
+            standartAppend(args);
+        else if(strcmp(args[argumentCount-2],"<") == 0)
+            standartInput(args);
+        else if(strcmp(args[argumentCount-2],"2>") == 0)
+            standartError(args);
+    }
+
+
         if(BUILT_IN==0){ //IF PROCESS IS NOT BUILT-IN PROGRAM FORKS TO EXECUTE PROGRAM
             cpid=fork();
             if(cpid==-1)
@@ -451,4 +486,206 @@ void searchDir(char* path,char *args[] ){ //searchs current path for source code
     }
 }
 
+
+void standartWrite(char *args[]) {
+    pid_t cpid;
+    cpid = fork();
+    int argCount = getArgumentCount(args);
+    if(cpid == -1)
+    {
+        fprintf(stderr,"%s","child is not created");
+        return;
+    }
+    else if(cpid == 0) {
+        int fd;
+        if ((fd = open(args[argCount - 1], CREATE_FLAGS, CREATE_MODE)) == -1) {
+            fprintf(stderr,"%s","dosya açılamadı");
+            return;
+        }
+        dup2(fd, STDOUT_FILENO);
+        close(fd);
+        char *path;
+        path = getPath(args[0]);
+        if(path != NULL){
+            args[argCount-1] = NULL;
+            args[argCount-2] = NULL;
+            execv(path,args);
+        }
+
+
+    }
+    else if(cpid>0)
+    {
+        waitpid(cpid, NULL , 0);
+        return;
+    }
+}
+
+
+void standartAppend(char *args[]){
+    pid_t cpid;
+    cpid = fork();
+    int argCount = getArgumentCount(args);
+    if(cpid == -1)
+    {
+        fprintf(stderr,"%s", "child is not created");
+        return;
+    }
+    else if(cpid == 0) {
+        int f1;
+        if ((f1 = open(args[argCount - 1], CREATE_APPEND, CREATE_MODE)) == -1) {
+            fprintf(stderr,"%s", "dosya açılamadı");
+            return;
+        }
+        args[argCount] = NULL;
+        dup2(f1, STDOUT_FILENO);
+        close(f1);
+        char *path;
+        path = getPath(args[0]);
+        if( path != NULL)
+        {
+            args[argCount-2] = NULL;
+            execv(path,args);
+        }
+
+    }
+    else if(cpid>0) {
+        waitpid(cpid, NULL, WNOHANG);
+        return;
+    }
+}
+
+void standartInput(char *args[]){
+
+    int argumentCount = getArgumentCount(args);
+    pid_t cpid;
+    cpid = fork();
+    char *path= getenv("PATH");
+    path = strtok(strdup(path),":");
+    if(cpid == -1)
+    {
+        fprintf(stderr,"%s", "child is not created");
+        exit(0);
+    }
+    else if(cpid == 0) {
+        int fd;
+        if ((fd = open(args[argumentCount - 1], CREATE_INPUTFLAGS, CREATE_MODE)) == -1) {
+            fprintf(stderr, "%s", "file is not opened");
+            exit(0);
+        }
+        dup2(fd, STDIN_FILENO);
+        close(fd);
+
+        char *path;
+        path = getPath(args[0]);
+        if (path != NULL) {
+            args[argumentCount - 2] = NULL;
+            execv(path, args);
+        }
+    }
+
+    else if(cpid>0)
+    {
+        waitpid(cpid, NULL , 0);
+        return;
+    }
+}
+
+void standartError(char *args[]) {
+    int argumentCount = getArgumentCount(args);
+    pid_t cpid;
+    cpid = fork();
+    if (cpid == -1) {
+        fprintf(stderr,"%s","child is not created");
+        return;
+    }
+    else if (cpid == 0) {
+        int fd;
+        if (fd = open(args[argumentCount - 1], CREATE_FLAGS, CREATE_MODE) == -1) {
+            fprintf(stderr,"%s","file is not opened");
+            return;
+        }
+        dup2(fd, STDERR_FILENO);
+        close(fd);
+        char *path;
+        path = getPath(args[0]);
+
+        if(path == NULL)
+        {
+            fprintf(stderr,"%s","path is not accessible");
+            return;
+        }
+        args[argumentCount-1] = NULL;
+        args[argumentCount-2] = NULL;
+        if(execv(args[0], args) == -1)
+            fprintf(stderr,"%s","path is not accessible");
+    }
+    else if (cpid > 0) {
+        waitpid(cpid, NULL, 0);
+        return;
+    }
+}
+
+void stdoutCommand(char *args[]){
+    int argumentCount = getArgumentCount(args);
+    pid_t cpid;
+    cpid = fork();
+    if (cpid == -1) {
+        fprintf(stderr,"%s","child is not created");
+        return;
+    }
+    else if (cpid == 0) {
+        int file1;
+        int file2;
+        file1 = open(args[argumentCount - 3], CREATE_INPUTFLAGS, CREATE_MODE);
+        file2 = open(args[argumentCount - 1], CREATE_FLAGS, CREATE_MODE);
+
+        dup2(file1, STDIN_FILENO);
+        close(file1);
+        dup2(file2, STDOUT_FILENO) ;
+        close(file2);
+
+        char *path;
+        path = getPath(args[0]);
+        if(path == NULL)
+        {
+            fprintf(stderr,"%s","path is not accessible");
+            return;
+        }
+        args[argumentCount-5] = NULL;
+        args[argumentCount-4] = NULL;
+        args[argumentCount-3] = NULL;
+        args[argumentCount-2] = NULL;
+        args[argumentCount-1] = NULL;
+        if(execv(args[0], args) == -1)
+            fprintf(stderr,"%s","not executed");
+
+    }
+    else if (cpid > 0) {
+        waitpid(cpid, NULL, 0);
+        return;
+    }
+
+}
+char* getPath(char* fileName){
+    char *path= getenv("PATH");
+    path = strtok(strdup(path),":");
+    struct dirent *file;
+    while(path != NULL)
+    {
+        DIR *dir;
+        dir = opendir(path);
+        while((file = readdir(dir) ) != NULL)
+        {
+            if( !strcmp(file->d_name, fileName))
+            {
+                strcat(path,"/");
+                strcat(path,fileName);
+                return path;
+            }
+        }
+        path = strtok(NULL,":");
+    }
+    return NULL;
+}
 
