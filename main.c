@@ -416,7 +416,6 @@ void search(char *args[]){ //makes error control and calls functions depending o
         }
         args1[len-2] ='\0';
         strcpy(args[1],args1);
-        fprintf(stderr,"%s",args[1]);
         searchDir(".",args);
     }
 }
@@ -438,12 +437,12 @@ void searchDir(char* path,char *args[] ){ //searchs current path for source code
             while(fgets(buff, 250, (FILE *) file)){
                 if(strcmp(args[1],"-r")==0) {
                     if ((strstr(buff, (args[2]))) != NULL) {
-                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
+                        fprintf(stderr, "\t%d: %s -> %s", lineNum, pathBuff, buff);
                     }
                 }
                 else  {
                     if ((strstr(buff, (args[1]))) != NULL) {
-                        fprintf(stderr, "%d: %s -> %s", lineNum, pathBuff, buff);
+                        fprintf(stderr, "\t%d: %s -> %s", lineNum, pathBuff, buff);
                     }
                 }
                 lineNum++;
